@@ -1,7 +1,10 @@
 import asyncio
 import argparse
-from itertools import cycle
-
+from contextlib import redirect_stdout
+from io import StringIO
+from kivy.uix.label import Label
+from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.textinput import TextInput
 from pyrogram import Client
 
 from bot.config import settings
@@ -46,7 +49,7 @@ async def get_tg_clients() -> list[Client]:
     return tg_clients
 
 
-async def process() -> None:
+async def process(args) -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument('-a', '--action', type=int, help='Action to perform')
 
@@ -54,7 +57,7 @@ async def process() -> None:
 
     logger.info(f"Detected {len(get_session_names())} sessions")
 
-    action = parser.parse_args().action
+    action = args
 
     if not action:
         print(options)
@@ -78,8 +81,23 @@ async def process() -> None:
         await run_tasks(tg_clients=tg_clients)
 
 
-async def run_tasks(tg_clients: list[Client]):
-    tasks = [asyncio.create_task(run_tapper(tg_client=tg_client, proxy=get_proxy_string(tg_client.name)))
-             for tg_client in tg_clients]
+async def run_tasks(tg_clients: list[Client], app):
+    f = StringIO()
+    label = Label(size_hint_y=None, text_size=(app.root.width, None), markup=True)
+    layout = BoxLayout(orientation='vertical')
+    layout.add_widget(label)
+    app.root.add_widget(layout)
 
-    await asyncio.gather(*tasks)
+    async def update_text():
+        while True:
+            label.text = f.getvalue().replace('\n', '[color=000000]\n[/color]')
+            label.height = label.texture_size[1]
+            await asyncio.sleep(1)
+
+    with redirect_stdout(f):
+        print('bot work started')
+        logger.add(f, format="<green>{time}</green> <level>{message}</level>")
+        tasks = [asyncio.create_task(run_tapper(tg_client=tg_client, proxy=get_proxy_string(tg_client.name)))
+                 for tg_client in tg_clients]
+        tasks.append(asyncio.create_task(update_text()))
+        await asyncio.gather(*tasks)
